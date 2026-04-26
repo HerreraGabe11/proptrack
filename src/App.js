@@ -1,4 +1,6 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { useAuth } from "./firebase/AuthContext";
+import { loadUserData, saveUserData } from "./firebase/firestore";
 
 const STATE_MARKET_DATA = {
   Colorado: {
@@ -140,12 +142,61 @@ const I = {
   Back: () => <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>,
   Eye: () => <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
   Star: () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>,
+  Dollar: () => <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>,
+  Stock: () => <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
+  Shield: () => <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+  Bank: () => <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M8 10v11M12 10v11M16 10v11M20 10v11"/></svg>,
+  Wallet: () => <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M21 12V7H5a2 2 0 010-4h14v4"/><path d="M3 5v14a2 2 0 002 2h16v-5"/><path d="M18 12a1 1 0 100 2 1 1 0 000-2z"/></svg>,
+  Link: () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>,
+  Pie: () => <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/></svg>,
+  TrendUp: () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>,
+  TrendDown: () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M23 18l-9.5-9.5-5 5L1 6"/><path d="M17 18h6v-6"/></svg>,
 };
 
 const CAT_C = { Mortgage:"#6366f1",Insurance:"#f59e0b",Utilities:"#10b981",Maintenance:"#ef4444",Repairs:"#ec4899",Landscaping:"#8b5cf6",HOA:"#06b6d4",Other:"#6b7280" };
 const ST_C = { completed:{c:"#10b981",bg:"#10b98118",l:"Done",I:I.Check},"in-progress":{c:"#f59e0b",bg:"#f59e0b18",l:"Active",I:I.Clock},scheduled:{c:"#6366f1",bg:"#6366f118",l:"Scheduled",I:I.Clock},pending:{c:"#ef4444",bg:"#ef444418",l:"Pending",I:I.Alert} };
 const PR_C = { high:{c:"#ef4444",l:"High"},medium:{c:"#f59e0b",l:"Med"},low:{c:"#6b7280",l:"Low"} };
 const INS_I = { trend:"\u{1F4CA}",positive:"\u2705",warning:"\u26A0\uFE0F",neutral:"\u2139\uFE0F" };
+
+const MOCK_STOCKS = [
+  { id: 1, ticker: "AAPL", name: "Apple Inc.", shares: 45, costBasis: 142.50, currentPrice: 198.36, sector: "Technology", brokerage: "Schwab" },
+  { id: 2, ticker: "MSFT", name: "Microsoft Corp.", shares: 20, costBasis: 285.00, currentPrice: 415.80, sector: "Technology", brokerage: "Schwab" },
+  { id: 3, ticker: "GOOGL", name: "Alphabet Inc.", shares: 15, costBasis: 120.00, currentPrice: 172.45, sector: "Technology", brokerage: "Schwab" },
+  { id: 4, ticker: "AMZN", name: "Amazon.com Inc.", shares: 30, costBasis: 128.50, currentPrice: 192.30, sector: "Consumer", brokerage: "Fidelity" },
+  { id: 5, ticker: "NVDA", name: "NVIDIA Corp.", shares: 25, costBasis: 480.00, currentPrice: 875.50, sector: "Technology", brokerage: "Fidelity" },
+  { id: 6, ticker: "VOO", name: "Vanguard S&P 500 ETF", shares: 12, costBasis: 380.00, currentPrice: 495.20, sector: "Index Fund", brokerage: "Vanguard" },
+  { id: 7, ticker: "VTI", name: "Vanguard Total Stock", shares: 18, costBasis: 205.00, currentPrice: 268.40, sector: "Index Fund", brokerage: "Vanguard" },
+  { id: 8, ticker: "TSLA", name: "Tesla Inc.", shares: 10, costBasis: 245.00, currentPrice: 178.90, sector: "Consumer", brokerage: "Schwab" },
+];
+
+const MOCK_RETIREMENT = [
+  { id: 1, name: "401(k) - Employer", type: "401k", provider: "Fidelity", balance: 128500, contributions: 95000, employerMatch: 22400, ytdContribution: 4200, ytdLimit: 23500, allocation: [{ label: "US Stocks", pct: 60, color: "#3b82f6" }, { label: "Int'l Stocks", pct: 20, color: "#10b981" }, { label: "Bonds", pct: 15, color: "#f59e0b" }, { label: "Cash", pct: 5, color: "#6b7280" }], history: [{ month: "Aug", value: 115000 }, { month: "Sep", value: 118000 }, { month: "Oct", value: 116500 }, { month: "Nov", value: 121000 }, { month: "Dec", value: 124000 }, { month: "Jan", value: 126800 }, { month: "Feb", value: 128500 }] },
+  { id: 2, name: "Roth IRA", type: "roth_ira", provider: "Vanguard", balance: 47200, contributions: 36000, employerMatch: 0, ytdContribution: 2000, ytdLimit: 7000, allocation: [{ label: "Growth Stocks", pct: 70, color: "#8b5cf6" }, { label: "Index Funds", pct: 25, color: "#3b82f6" }, { label: "Bonds", pct: 5, color: "#f59e0b" }], history: [{ month: "Aug", value: 42000 }, { month: "Sep", value: 43200 }, { month: "Oct", value: 42800 }, { month: "Nov", value: 44500 }, { month: "Dec", value: 45600 }, { month: "Jan", value: 46400 }, { month: "Feb", value: 47200 }] },
+  { id: 3, name: "Traditional IRA", type: "trad_ira", provider: "Schwab", balance: 22800, contributions: 18000, employerMatch: 0, ytdContribution: 0, ytdLimit: 7000, allocation: [{ label: "Target Date 2055", pct: 100, color: "#06b6d4" }], history: [{ month: "Aug", value: 20500 }, { month: "Sep", value: 21000 }, { month: "Oct", value: 20800 }, { month: "Nov", value: 21500 }, { month: "Dec", value: 22000 }, { month: "Jan", value: 22400 }, { month: "Feb", value: 22800 }] },
+];
+
+const MOCK_OTHER_ASSETS = [
+  { id: 1, name: "High-Yield Savings", type: "savings", institution: "Marcus by Goldman Sachs", balance: 25000, apy: 4.5, color: "#10b981" },
+  { id: 2, name: "Emergency Fund", type: "savings", institution: "Ally Bank", balance: 15000, apy: 4.25, color: "#3b82f6" },
+  { id: 3, name: "Bitcoin", type: "crypto", institution: "Coinbase", balance: 12400, units: 0.128, costBasis: 8500, color: "#f97316" },
+  { id: 4, name: "Ethereum", type: "crypto", institution: "Coinbase", balance: 4800, units: 1.35, costBasis: 3200, color: "#6366f1" },
+  { id: 5, name: "12-Month CD", type: "cd", institution: "Capital One", balance: 10000, apy: 4.8, maturityDate: "2026-11-15", color: "#f59e0b" },
+  { id: 6, name: "I-Bonds", type: "bonds", institution: "TreasuryDirect", balance: 20000, apy: 3.11, color: "#8b5cf6" },
+];
+
+const MOCK_LIABILITIES = [
+  { id: 1, name: "LoDo Loft Mortgage", type: "mortgage", balance: 295000, rate: 5.25, monthlyPayment: 2850, originalBalance: 385000 },
+  { id: 2, name: "Pearl St. Mortgage", type: "mortgage", balance: 520000, rate: 4.875, monthlyPayment: 3400, originalBalance: 650000 },
+  { id: 3, name: "Springs Ranch Mortgage", type: "mortgage", balance: 265000, rate: 5.5, monthlyPayment: 1650, originalBalance: 306000 },
+  { id: 4, name: "Sugarhouse Mortgage", type: "mortgage", balance: 335000, rate: 4.75, monthlyPayment: 2050, originalBalance: 378000 },
+  { id: 5, name: "Daybreak Mortgage", type: "mortgage", balance: 355000, rate: 6.125, monthlyPayment: 2250, originalBalance: 390000 },
+  { id: 6, name: "Red Rock Mortgage", type: "mortgage", balance: 380000, rate: 5.0, monthlyPayment: 2300, originalBalance: 418500 },
+  { id: 7, name: "Auto Loan - Model Y", type: "auto", balance: 28500, rate: 4.5, monthlyPayment: 620, originalBalance: 42000 },
+  { id: 8, name: "Student Loans", type: "student", balance: 18200, rate: 3.75, monthlyPayment: 350, originalBalance: 45000 },
+];
+
+const ACCT_COLORS = { "401k": "#3b82f6", roth_ira: "#8b5cf6", trad_ira: "#06b6d4", savings: "#10b981", crypto: "#f97316", cd: "#f59e0b", bonds: "#8b5cf6" };
+const LIAB_COLORS = { mortgage: "#ef4444", auto: "#f59e0b", student: "#6366f1", credit: "#ec4899" };
 
 function Spark({ data, keys, colors, height = 120 }) {
   if (!data?.length) return null;
@@ -190,8 +241,12 @@ const Card=({children,style:s,...p})=><div style={{background:"#1f2937",border:"
 const Pill=({c,bg,ch})=><span style={{fontSize:10,padding:"2px 8px",borderRadius:5,background:bg||(c+"18"),color:c,fontWeight:600}}>{ch}</span>;
 
 export default function App() {
-  const [properties, setProperties] = useState(MOCK_PROPERTIES);
-  const [prospects, setProspects] = useState(INIT_PROSPECTS);
+  const { user, logout } = useAuth();
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  const [properties, setProperties] = useState([]);
+  const [prospects, setProspects] = useState([]);
   const [view, setView] = useState("portfolio");
   const [selState, setSelState] = useState(null);
   const [selPropId, setSelPropId] = useState(null);
@@ -204,6 +259,78 @@ export default function App() {
   const [files, setFiles] = useState([]);
   const fRef = useRef(null);
 
+  // Top-level navigation: "realestate" or "wealth"
+  const [topNav, setTopNav] = useState("realestate");
+  // Wealth state
+  const [stocks, setStocks] = useState([]);
+  const [retirement, setRetirement] = useState([]);
+  const [otherAssets, setOtherAssets] = useState([]);
+  const [liabilities, setLiabilities] = useState([]);
+  const [wealthView, setWealthView] = useState("overview");
+  const [showAddStock, setShowAddStock] = useState(false);
+  const [showAddRetirement, setShowAddRetirement] = useState(false);
+  const [showAddOther, setShowAddOther] = useState(false);
+  const [showAddLiability, setShowAddLiability] = useState(false);
+  const [selRetId, setSelRetId] = useState(null);
+
+  // ═══════════════ LOAD DATA FROM FIRESTORE ═══════════════
+  useEffect(() => {
+    if (!user) return;
+    async function load() {
+      const data = await loadUserData(user.uid);
+      if (data) {
+        // User has saved data — load it
+        if (data.properties?.length) setProperties(data.properties);
+        else setProperties(MOCK_PROPERTIES); // First time: use sample data
+        if (data.prospects?.length) setProspects(data.prospects);
+        else setProspects(INIT_PROSPECTS);
+        if (data.stocks?.length) setStocks(data.stocks);
+        else setStocks(MOCK_STOCKS);
+        if (data.retirement?.length) setRetirement(data.retirement);
+        else setRetirement(MOCK_RETIREMENT);
+        if (data.otherAssets?.length) setOtherAssets(data.otherAssets);
+        else setOtherAssets(MOCK_OTHER_ASSETS);
+        if (data.liabilities?.length) setLiabilities(data.liabilities);
+        else setLiabilities(MOCK_LIABILITIES);
+      } else {
+        // Brand new user — load sample data
+        setProperties(MOCK_PROPERTIES);
+        setProspects(INIT_PROSPECTS);
+        setStocks(MOCK_STOCKS);
+        setRetirement(MOCK_RETIREMENT);
+        setOtherAssets(MOCK_OTHER_ASSETS);
+        setLiabilities(MOCK_LIABILITIES);
+      }
+      setDataLoaded(true);
+    }
+    load();
+  }, [user]);
+
+  // ═══════════════ AUTO-SAVE TO FIRESTORE ═══════════════
+  const saveTimer = useRef(null);
+  const doSave = useCallback(() => {
+    if (!user || !dataLoaded) return;
+    saveUserData(user.uid, { properties, prospects, stocks, retirement, otherAssets, liabilities });
+  }, [user, dataLoaded, properties, prospects, stocks, retirement, otherAssets, liabilities]);
+
+  useEffect(() => {
+    if (!dataLoaded) return;
+    // Debounce: save 2 seconds after last change
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(doSave, 2000);
+    return () => clearTimeout(saveTimer.current);
+  }, [doSave, dataLoaded]);
+
+  // Show loading while data loads
+  if (!dataLoaded) {
+    return (
+      <div style={{ minHeight:"100vh",background:"#111827",display:"flex",alignItems:"center",justifyContent:"center",color:"#6b7280",fontSize:14,fontFamily:"'Outfit',sans-serif" }}>
+        <style>{`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`}</style>
+        <div style={{animation:"pulse 1.5s ease infinite"}}>Loading your dashboard...</div>
+      </div>
+    );
+  }
+
   const states = [...new Set([...properties.map((p) => p.state), ...prospects.map((p) => p.state)])].filter((s) => STATE_MARKET_DATA[s]);
   const groups = {}; states.forEach((s) => { groups[s] = properties.filter((p) => p.state === s); });
   const prospectGroups = {}; states.forEach((s) => { prospectGroups[s] = prospects.filter((p) => p.state === s && p.stage !== "closed"); });
@@ -213,10 +340,29 @@ export default function App() {
   const totVal = properties.reduce((s, p) => s + avgVal(p), 0);
   const totEq = properties.reduce((s, p) => s + (avgVal(p) - p.purchasePrice), 0);
 
+  // Wealth calculations
+  const stocksValue = stocks.reduce((s, st) => s + st.shares * st.currentPrice, 0);
+  const stocksCostBasis = stocks.reduce((s, st) => s + st.shares * st.costBasis, 0);
+  const stocksGain = stocksValue - stocksCostBasis;
+  const retirementValue = retirement.reduce((s, r) => s + r.balance, 0);
+  const otherAssetsValue = otherAssets.reduce((s, a) => s + a.balance, 0);
+  const totalLiabilities = liabilities.reduce((s, l) => s + l.balance, 0);
+  const totalAssets = totVal + stocksValue + retirementValue + otherAssetsValue;
+  const netWorth = totalAssets - totalLiabilities;
+
+  const selRet = retirement.find((r) => r.id === selRetId);
+
   const openSt = (st) => { setSelState(st); setView("state"); };
   const openPr = (id) => { setSelPropId(id); setTab("overview"); setView("property"); };
   const openProspect = (id) => { setSelProspectId(id); setView("prospect"); };
-  const goBack = () => { if (view === "property" || view === "prospect") setView("state"); else { setView("portfolio"); setSelState(null); } };
+  const goBack = () => { 
+    if (topNav === "wealth") {
+      if (wealthView !== "overview") { setWealthView("overview"); setSelRetId(null); }
+      else { setTopNav("realestate"); setView("portfolio"); }
+    } else {
+      if (view === "property" || view === "prospect") setView("state"); else { setView("portfolio"); setSelState(null); }
+    }
+  };
 
   const updateProspectStage = (id, newStage) => {
     if (newStage === "closed") {
@@ -295,19 +441,44 @@ export default function App() {
 
       <header style={{ padding:"12px 16px",borderBottom:"1px solid #1f2937",display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(17,24,39,.88)",backdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:100 }}>
         <div style={{ display:"flex",alignItems:"center",gap:12 }}>
-          {view !== "portfolio" && <button onClick={goBack} style={{ background:"#1f2937",border:"1px solid #374151",borderRadius:7,padding:"5px 7px",cursor:"pointer",color:"#9ca3af",display:"flex" }}><I.Back/></button>}
-          <div style={{ width:32,height:32,borderRadius:9,background:"linear-gradient(135deg,#3b82f6,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff" }}><I.Home/></div>
-          <div><h1 style={{ margin:0,fontSize:16,fontWeight:700,letterSpacing:"-.02em" }}>PropTrack</h1><span style={{ fontSize:9,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace",letterSpacing:".06em" }}>{view==="portfolio"?"PORTFOLIO":view==="state"?(selState||"").toUpperCase()+" DASHBOARD":view==="prospect"?"PROSPECT DETAIL":(prop?.name||"").toUpperCase()}</span></div>
+          {(topNav==="wealth"?(wealthView!=="overview"):view !== "portfolio") && <button onClick={goBack} style={{ background:"#1f2937",border:"1px solid #374151",borderRadius:7,padding:"5px 7px",cursor:"pointer",color:"#9ca3af",display:"flex" }}><I.Back/></button>}
+          <div style={{ width:32,height:32,borderRadius:9,background:"linear-gradient(135deg,#3b82f6,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff" }}>{topNav==="wealth"?<I.Dollar/>:<I.Home/>}</div>
+          <div><h1 style={{ margin:0,fontSize:16,fontWeight:700,letterSpacing:"-.02em" }}>PropTrack</h1><span style={{ fontSize:9,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace",letterSpacing:".06em" }}>{topNav==="wealth"?(wealthView==="overview"?"NET WORTH DASHBOARD":wealthView==="retirement"&&selRet?selRet.name.toUpperCase():wealthView.toUpperCase()):(view==="portfolio"?"PORTFOLIO":view==="state"?(selState||"").toUpperCase()+" DASHBOARD":view==="prospect"?"PROSPECT DETAIL":(prop?.name||"").toUpperCase())}</span></div>
         </div>
         <div className="header-right">
-          <div style={{ display:"flex",gap:4 }}>
+          {/* Top-level toggle */}
+          <div style={{display:"flex",background:"#1f2937",borderRadius:9,padding:2,border:"1px solid #374151"}}>
+            <button onClick={()=>{setTopNav("realestate");setView("portfolio");setSelState(null);}} style={{padding:"5px 12px",borderRadius:7,border:"none",cursor:"pointer",fontSize:11,fontWeight:600,background:topNav==="realestate"?"linear-gradient(135deg,#3b82f6,#2563eb)":"transparent",color:topNav==="realestate"?"#fff":"#6b7280",transition:"all .2s",display:"flex",alignItems:"center",gap:4}}><I.Home/> Property</button>
+            <button onClick={()=>{setTopNav("wealth");setWealthView("overview");}} style={{padding:"5px 12px",borderRadius:7,border:"none",cursor:"pointer",fontSize:11,fontWeight:600,background:topNav==="wealth"?"linear-gradient(135deg,#10b981,#059669)":"transparent",color:topNav==="wealth"?"#fff":"#6b7280",transition:"all .2s",display:"flex",alignItems:"center",gap:4}}><I.Dollar/> Wealth</button>
+          </div>
+          {topNav==="realestate" && <div style={{ display:"flex",gap:4 }}>
             {states.map((st)=>{const md=STATE_MARKET_DATA[st];return(<button key={st} onClick={()=>openSt(st)} style={{background:selState===st&&view!=="portfolio"?md.color+"20":"#1f2937",border:"1px solid "+(selState===st&&view!=="portfolio"?md.color:"#374151"),borderRadius:7,padding:"4px 10px",cursor:"pointer",color:selState===st&&view!=="portfolio"?md.color:"#9ca3af",fontSize:11,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{md.abbr}</button>);})}
             <button onClick={()=>{setView("portfolio");setSelState(null);}} style={{background:view==="portfolio"?"#3b82f620":"#1f2937",border:"1px solid "+(view==="portfolio"?"#3b82f6":"#374151"),borderRadius:7,padding:"4px 10px",cursor:"pointer",color:view==="portfolio"?"#3b82f6":"#9ca3af",fontSize:11,fontWeight:600}}>All</button>
-          </div>
+          </div>}
           <div className="header-stats" style={{background:"#1f2937",border:"1px solid #374151",borderRadius:9,padding:"5px 14px"}}>
-            <div><div style={{fontSize:8,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace"}}>PORTFOLIO</div><div style={{fontSize:14,fontWeight:700,color:"#3b82f6"}}>{fmt(totVal)}</div></div>
+            <div><div style={{fontSize:8,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace"}}>NET WORTH</div><div style={{fontSize:14,fontWeight:700,color:"#10b981"}}>{fmt(netWorth)}</div></div>
             <div style={{width:1,background:"#374151"}}/>
-            <div><div style={{fontSize:8,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace"}}>EQUITY</div><div style={{fontSize:14,fontWeight:700,color:"#10b981"}}>+{fmt(totEq)}</div></div>
+            <div><div style={{fontSize:8,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace"}}>ASSETS</div><div style={{fontSize:14,fontWeight:700,color:"#3b82f6"}}>{fmt(totalAssets)}</div></div>
+          </div>
+          {/* User Menu */}
+          <div style={{position:"relative"}}>
+            <button onClick={()=>setShowUserMenu(!showUserMenu)} style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#3b82f6,#8b5cf6)",border:"2px solid #374151",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13,fontWeight:700,padding:0}}>
+              {(user?.displayName||user?.email||"U").charAt(0).toUpperCase()}
+            </button>
+            {showUserMenu && (<div style={{position:"absolute",top:42,right:0,background:"#1f2937",border:"1px solid #374151",borderRadius:12,padding:8,minWidth:200,zIndex:200,boxShadow:"0 8px 32px rgba(0,0,0,.5)",animation:"fu .2s ease"}} onClick={(e)=>e.stopPropagation()}>
+              <div style={{padding:"10px 12px",borderBottom:"1px solid #2d3748",marginBottom:4}}>
+                <div style={{fontSize:13,fontWeight:600,color:"#e5e7eb"}}>{user?.displayName||"User"}</div>
+                <div style={{fontSize:11,color:"#6b7280",marginTop:2}}>{user?.email}</div>
+              </div>
+              <button onClick={()=>{doSave();setShowUserMenu(false);}} style={{width:"100%",padding:"8px 12px",background:"none",border:"none",borderRadius:8,cursor:"pointer",color:"#9ca3af",fontSize:12,textAlign:"left",display:"flex",alignItems:"center",gap:8,transition:"background .15s"}} onMouseEnter={(e)=>e.currentTarget.style.background="#111827"} onMouseLeave={(e)=>e.currentTarget.style.background="none"}>
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+                Save Now
+              </button>
+              <button onClick={async()=>{await logout();setShowUserMenu(false);}} style={{width:"100%",padding:"8px 12px",background:"none",border:"none",borderRadius:8,cursor:"pointer",color:"#ef4444",fontSize:12,textAlign:"left",display:"flex",alignItems:"center",gap:8,transition:"background .15s"}} onMouseEnter={(e)=>e.currentTarget.style.background="#111827"} onMouseLeave={(e)=>e.currentTarget.style.background="none"}>
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                Sign Out
+              </button>
+            </div>)}
           </div>
         </div>
       </header>
@@ -315,7 +486,7 @@ export default function App() {
       <main className="main-pad">
 
         {/* PORTFOLIO VIEW */}
-        {view === "portfolio" && (<div style={{animation:"fu .35s ease"}}>
+        {topNav==="realestate" && view === "portfolio" && (<div style={{animation:"fu .35s ease"}}>
           <div className="g4" style={{marginBottom:24}}>
             {[{l:"PORTFOLIO VALUE",v:fmt(totVal),c:"#3b82f6"},{l:"TOTAL EQUITY",v:"+"+fmt(totEq),c:"#10b981"},{l:"PROPERTIES",v:properties.length,c:"#f59e0b"},{l:"PROSPECTS",v:prospects.length,c:"#8b5cf6"}].map((c,i)=>(<Card key={i} style={{animation:"fu .3s ease "+(i*.06)+"s both"}}><div style={{fontSize:9,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace",letterSpacing:".06em",marginBottom:6}}>{c.l}</div><div style={{fontSize:22,fontWeight:700,color:c.c,letterSpacing:"-.02em"}}>{c.v}</div></Card>))}
           </div>
@@ -336,7 +507,7 @@ export default function App() {
         </div>)}
 
         {/* STATE DASHBOARD */}
-        {view === "state" && sm && (()=>{
+        {topNav==="realestate" && view === "state" && sm && (()=>{
           const ps=groups[selState]||[];const prs=prospectGroups[selState]||[];
           const sv=ps.reduce((s,p)=>s+avgVal(p),0);const se=ps.reduce((s,p)=>s+(avgVal(p)-p.purchasePrice),0);
           const totalSqft=ps.reduce((s,p)=>s+p.sqft,0);const totalMaintOpen=ps.reduce((s,p)=>s+p.maintenance.filter((m)=>m.status!=="completed").length,0);
@@ -412,7 +583,7 @@ export default function App() {
         })()}
 
         {/* PROSPECT DETAIL VIEW */}
-        {view === "prospect" && prospect && (()=>{
+        {topNav==="realestate" && view === "prospect" && prospect && (()=>{
           const pr=prospect;const stg=PIPELINE_STAGES.find((s)=>s.id===pr.stage);const stgIdx=PIPELINE_STAGES.findIndex((s)=>s.id===pr.stage);
           const avgEst=Math.round((pr.zillowEst+pr.redfinEst+pr.realtorEst)/3);const diff=avgEst-pr.listPrice;const ma=pr.marketAnalysis;const psm=STATE_MARKET_DATA[pr.state];
           return(<div style={{animation:"fu .35s ease"}}>
@@ -468,7 +639,7 @@ export default function App() {
         })()}
 
         {/* PROPERTY DETAIL */}
-        {view === "property" && prop && (()=>{
+        {topNav==="realestate" && view === "property" && prop && (()=>{
           const p=prop,v=avgVal(p),eq=v-p.purchasePrice;
           const mExp=p.expenses.filter((e)=>e.date.startsWith("2026-01")).reduce((s,e)=>s+e.amount,0);
           const tExp=p.expenses.reduce((s,e)=>s+e.amount,0);
@@ -485,6 +656,141 @@ export default function App() {
             {tab==="expenses"&&(<div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div style={{display:"flex",gap:18}}><div><div style={{fontSize:9,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace"}}>THIS MONTH</div><div style={{fontSize:19,fontWeight:700,color:"#f59e0b"}}>{fmt(mExp)}</div></div><div><div style={{fontSize:9,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace"}}>ALL TIME</div><div style={{fontSize:19,fontWeight:700}}>{fmt(tExp)}</div></div></div><button onClick={()=>setShowExp(true)} style={bp}><I.Plus/> Add Expense</button></div><div style={{gap:12}} className="g1-230"><Card style={{padding:0,overflow:"hidden"}}><table style={{width:"100%",display:"block",overflowX:"auto",WebkitOverflowScrolling:"touch",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#111827"}}>{["Date","Category","Description","Amount","Invoice"].map((h)=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:9,fontFamily:"'JetBrains Mono',monospace",color:"#6b7280",fontWeight:600}}>{h.toUpperCase()}</th>)}</tr></thead><tbody>{p.expenses.map((e)=>(<tr key={e.id} style={{borderTop:"1px solid #2d3748"}}><td style={{padding:"8px 12px",color:"#9ca3af",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{e.date}</td><td style={{padding:"8px 12px"}}><span style={{display:"inline-flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:2,background:CAT_C[e.category]||"#6b7280"}}/>{e.category}</span></td><td style={{padding:"8px 12px",color:"#9ca3af"}}>{e.description}</td><td style={{padding:"8px 12px",fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmtD(e.amount)}</td><td style={{padding:"8px 12px"}}>{e.invoice?<span style={{fontSize:10,color:"#3b82f6",background:"#3b82f618",padding:"2px 6px",borderRadius:4}}>{e.invoice}</span>:<span style={{color:"#4b5563"}}>-</span>}</td></tr>))}</tbody></table></Card><Card><h4 style={{margin:"0 0 8px",fontSize:12,fontWeight:600}}>By Category</h4><Donut data={dd} size={170}/><div style={{marginTop:8}}>{dd.sort((a,b)=>b.value-a.value).map((d)=><div key={d.label} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",fontSize:10,borderBottom:"1px solid #2d3748"}}><span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:2,background:d.color}}/> {d.label}</span><span style={{fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(d.value)}</span></div>)}</div></Card></div></div>)}
           </div>);
         })()}
+      {/* ═══════════════ WEALTH DASHBOARD ═══════════════ */}
+        {topNav==="wealth" && wealthView==="overview" && (<div style={{animation:"fu .35s ease"}}>
+          {/* Net Worth Banner */}
+          <div style={{background:"linear-gradient(135deg,#10b98114,#111827 50%,#10b98106)",border:"1px solid #10b98130",borderRadius:16,padding:26,marginBottom:22,position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:-20,right:-10,fontSize:100,fontWeight:900,color:"#10b98106",fontFamily:"'JetBrains Mono',monospace",lineHeight:1,pointerEvents:"none"}}>$</div>
+            <h2 style={{margin:"0 0 6px",fontSize:22,fontWeight:800,letterSpacing:"-.03em"}}>Net Worth Overview</h2>
+            <p style={{margin:"0 0 18px",fontSize:12,color:"#6b7280"}}>Total assets minus liabilities across all accounts</p>
+            <div className="g4" style={{marginBottom:0}}>
+              {[{l:"NET WORTH",v:fmt(netWorth),c:"#10b981"},{l:"TOTAL ASSETS",v:fmt(totalAssets),c:"#3b82f6"},{l:"TOTAL LIABILITIES",v:fmt(totalLiabilities),c:"#ef4444"},{l:"DEBT-TO-ASSET",v:(totalAssets>0?((totalLiabilities/totalAssets)*100).toFixed(1):0)+"%",c:"#f59e0b"}].map((c,i)=>(<div key={i} style={{background:"#111827",border:"1px solid #2d3748",borderRadius:10,padding:"12px 14px",animation:"fu .3s ease "+(i*.04)+"s both"}}><div style={{fontSize:8,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace",letterSpacing:".06em",marginBottom:5}}>{c.l}</div><div style={{fontSize:18,fontWeight:700,color:c.c,letterSpacing:"-.01em"}}>{c.v}</div></div>))}
+            </div>
+          </div>
+          {/* Asset Breakdown */}
+          <div className="g2" style={{marginBottom:22}}>
+            <Card><h3 style={{margin:"0 0 14px",fontSize:14,fontWeight:600}}>Asset Allocation</h3>
+              <Donut data={[{label:"Real Estate",value:totVal,color:"#3b82f6"},{label:"Stocks",value:stocksValue,color:"#10b981"},{label:"Retirement",value:retirementValue,color:"#8b5cf6"},{label:"Other",value:otherAssetsValue,color:"#f59e0b"}]} size={180}/>
+              <div style={{marginTop:12}}>{[{l:"Real Estate",v:totVal,c:"#3b82f6",pct:((totVal/totalAssets)*100).toFixed(1)},{l:"Stocks",v:stocksValue,c:"#10b981",pct:((stocksValue/totalAssets)*100).toFixed(1)},{l:"Retirement",v:retirementValue,c:"#8b5cf6",pct:((retirementValue/totalAssets)*100).toFixed(1)},{l:"Other Assets",v:otherAssetsValue,c:"#f59e0b",pct:((otherAssetsValue/totalAssets)*100).toFixed(1)}].map((d)=><div key={d.l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:11,borderBottom:"1px solid #2d3748"}}><span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:2,background:d.c}}/>{d.l}</span><span style={{fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(d.v)} <span style={{color:"#6b7280",fontSize:9}}>({d.pct}%)</span></span></div>)}</div>
+            </Card>
+            <Card><h3 style={{margin:"0 0 14px",fontSize:14,fontWeight:600}}>Liabilities Breakdown</h3>
+              {(() => {const byType={};liabilities.forEach((l)=>{byType[l.type]=(byType[l.type]||0)+l.balance;});const ld=Object.entries(byType).map(([t,v])=>({label:t.charAt(0).toUpperCase()+t.slice(1),value:v,color:LIAB_COLORS[t]||"#6b7280"}));return(<><Donut data={ld} size={180}/><div style={{marginTop:12}}>{ld.map((d)=><div key={d.label} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:11,borderBottom:"1px solid #2d3748"}}><span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:2,background:d.color}}/>{d.label}</span><span style={{fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(d.value)}</span></div>)}</div></>);})()}
+            </Card>
+          </div>
+          {/* Category Cards */}
+          <div className="g4" style={{marginBottom:22}}>
+            {[{l:"Stock Portfolio",v:fmt(stocksValue),s:(stocksGain>=0?"+":"")+fmt(stocksGain)+" gain",sc:stocksGain>=0?"#10b981":"#ef4444",Ic:I.Stock,click:()=>setWealthView("stocks"),bg:"#10b981"},{l:"Retirement",v:fmt(retirementValue),s:retirement.length+" accounts",sc:"#8b5cf6",Ic:I.Shield,click:()=>setWealthView("retirement"),bg:"#8b5cf6"},{l:"Other Assets",v:fmt(otherAssetsValue),s:otherAssets.length+" accounts",sc:"#f59e0b",Ic:I.Wallet,click:()=>setWealthView("other"),bg:"#f59e0b"},{l:"Real Estate Equity",v:fmt(totEq),s:properties.length+" properties",sc:"#3b82f6",Ic:I.Home,click:()=>{setTopNav("realestate");setView("portfolio");},bg:"#3b82f6"}].map((c,i)=>(<Card key={i} style={{cursor:"pointer",transition:"all .2s",animation:"fu .3s ease "+(i*.06)+"s both"}} onClick={c.click} onMouseEnter={(e)=>{e.currentTarget.style.borderColor=c.bg;e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={(e)=>{e.currentTarget.style.borderColor="#2d3748";e.currentTarget.style.transform="none";}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><div style={{width:32,height:32,borderRadius:8,background:c.bg+"20",display:"flex",alignItems:"center",justifyContent:"center",color:c.bg}}><c.Ic/></div><div style={{fontSize:8,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace"}}>{c.l.toUpperCase()}</div></div>
+              <div style={{fontSize:20,fontWeight:700,color:"#e5e7eb",marginBottom:4}}>{c.v}</div>
+              <div style={{fontSize:10,color:c.sc}}>{c.s}</div>
+            </Card>))}
+          </div>
+          {/* Liabilities Table */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h3 style={{margin:0,fontSize:15,fontWeight:700}}>Liabilities</h3><button onClick={()=>setShowAddLiability(true)} style={bp}><I.Plus/> Add</button></div>
+          <Card style={{padding:0,overflow:"hidden",marginBottom:22}}>
+            <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}><thead><tr style={{background:"#111827"}}>{["Name","Type","Balance","Rate","Monthly","Paid Off"].map((h)=><th key={h} style={{padding:"8px 14px",textAlign:"left",fontSize:9,fontFamily:"'JetBrains Mono',monospace",color:"#6b7280",fontWeight:600}}>{h.toUpperCase()}</th>)}</tr></thead>
+              <tbody>{liabilities.map((l)=>{const paidPct=((l.originalBalance-l.balance)/l.originalBalance*100).toFixed(0);return(<tr key={l.id} style={{borderTop:"1px solid #2d3748"}}><td style={{padding:"8px 14px",fontWeight:500}}><span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:6,height:6,borderRadius:2,background:LIAB_COLORS[l.type]||"#6b7280"}}/>{l.name}</span></td><td style={{padding:"8px 14px",textTransform:"capitalize"}}>{l.type}</td><td style={{padding:"8px 14px",fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{fmt(l.balance)}</td><td style={{padding:"8px 14px",fontFamily:"'JetBrains Mono',monospace"}}>{l.rate}%</td><td style={{padding:"8px 14px",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(l.monthlyPayment)}</td><td style={{padding:"8px 14px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{flex:1,height:6,background:"#2d3748",borderRadius:3,overflow:"hidden"}}><div style={{width:paidPct+"%",height:"100%",background:"#10b981",borderRadius:3}}/></div><span style={{fontSize:10,color:"#10b981",fontFamily:"'JetBrains Mono',monospace"}}>{paidPct}%</span></div></td></tr>);})}</tbody>
+            </table></div>
+          </Card>
+          {/* Connect Brokerage CTA */}
+          <Card style={{background:"linear-gradient(135deg,#1f293780,#111827)",border:"1px dashed #374151",textAlign:"center",padding:30}}>
+            <div style={{width:48,height:48,borderRadius:12,background:"#3b82f620",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",color:"#3b82f6"}}><I.Link/></div>
+            <h3 style={{margin:"0 0 6px",fontSize:16,fontWeight:700}}>Connect Your Brokerage</h3>
+            <p style={{margin:"0 0 16px",fontSize:12,color:"#6b7280",maxWidth:400,marginLeft:"auto",marginRight:"auto"}}>Automatically sync your stock portfolio, retirement accounts, and bank balances. Support for Schwab, Fidelity, Vanguard, Robinhood &amp; more coming soon.</p>
+            <button style={{...bp,background:"linear-gradient(135deg,#3b82f6,#6366f1)",padding:"10px 24px",fontSize:13,opacity:.6,cursor:"not-allowed"}}>Coming Soon</button>
+          </Card>
+        </div>)}
+
+        {/* STOCKS VIEW */}
+        {topNav==="wealth" && wealthView==="stocks" && (<div style={{animation:"fu .35s ease"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
+            <div><h2 style={{margin:0,fontSize:20,fontWeight:700}}>Stock Portfolio</h2><p style={{margin:"3px 0 0",fontSize:12,color:"#6b7280"}}>{stocks.length} positions across {[...new Set(stocks.map((s)=>s.brokerage))].length} brokerages</p></div>
+            <button onClick={()=>setShowAddStock(true)} style={bp}><I.Plus/> Add Stock</button>
+          </div>
+          <div className="g4" style={{marginBottom:20}}>
+            {[{l:"MARKET VALUE",v:fmt(stocksValue),c:"#10b981"},{l:"COST BASIS",v:fmt(stocksCostBasis),c:"#6b7280"},{l:"TOTAL GAIN/LOSS",v:(stocksGain>=0?"+":"")+fmt(stocksGain),c:stocksGain>=0?"#10b981":"#ef4444"},{l:"RETURN",v:(stocksCostBasis>0?(((stocksValue-stocksCostBasis)/stocksCostBasis)*100).toFixed(1):0)+"%",c:stocksGain>=0?"#10b981":"#ef4444"}].map((c,i)=>(<Card key={i}><div style={{fontSize:8,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace",marginBottom:5}}>{c.l}</div><div style={{fontSize:20,fontWeight:700,color:c.c}}>{c.v}</div></Card>))}
+          </div>
+          <Card style={{padding:0,overflow:"hidden"}}>
+            <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:700}}><thead><tr style={{background:"#111827"}}>{["Ticker","Name","Shares","Cost Basis","Price","Value","Gain/Loss","Brokerage"].map((h)=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:9,fontFamily:"'JetBrains Mono',monospace",color:"#6b7280",fontWeight:600}}>{h.toUpperCase()}</th>)}</tr></thead>
+              <tbody>{stocks.map((s)=>{const val=s.shares*s.currentPrice,cost=s.shares*s.costBasis,gain=val-cost,pct=((gain/cost)*100).toFixed(1);return(<tr key={s.id} style={{borderTop:"1px solid #2d3748"}}>
+                <td style={{padding:"8px 12px",fontWeight:700,color:"#e5e7eb",fontFamily:"'JetBrains Mono',monospace"}}>{s.ticker}</td>
+                <td style={{padding:"8px 12px",color:"#9ca3af"}}>{s.name}</td>
+                <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace"}}>{s.shares}</td>
+                <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace"}}>{fmtD(s.costBasis)}</td>
+                <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{fmtD(s.currentPrice)}</td>
+                <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{fmt(val)}</td>
+                <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace",color:gain>=0?"#10b981":"#ef4444"}}>{gain>=0?"+":""}{fmt(gain)} <span style={{fontSize:10}}>({pct}%)</span></td>
+                <td style={{padding:"8px 12px"}}><Pill c={s.brokerage==="Schwab"?"#3b82f6":s.brokerage==="Fidelity"?"#10b981":"#f59e0b"} ch={s.brokerage}/></td>
+              </tr>);})}</tbody>
+            </table></div>
+          </Card>
+          {/* By Sector */}
+          <div className="g2" style={{marginTop:20}}>
+            <Card><h3 style={{margin:"0 0 14px",fontSize:14,fontWeight:600}}>By Sector</h3>
+              {(()=>{const bySector={};stocks.forEach((s)=>{bySector[s.sector]=(bySector[s.sector]||0)+s.shares*s.currentPrice;});const sd=Object.entries(bySector).map(([k,v],i)=>({label:k,value:v,color:["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444"][i%5]}));return(<><Donut data={sd} size={160}/><div style={{marginTop:10}}>{sd.map((d)=><div key={d.label} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",fontSize:10,borderBottom:"1px solid #2d3748"}}><span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:2,background:d.color}}/> {d.label}</span><span style={{fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(d.value)}</span></div>)}</div></>);})()}
+            </Card>
+            <Card><h3 style={{margin:"0 0 14px",fontSize:14,fontWeight:600}}>By Brokerage</h3>
+              {(()=>{const byBroker={};stocks.forEach((s)=>{byBroker[s.brokerage]=(byBroker[s.brokerage]||0)+s.shares*s.currentPrice;});const bd=Object.entries(byBroker).map(([k,v],i)=>({label:k,value:v,color:["#3b82f6","#10b981","#f59e0b"][i%3]}));return(<><Donut data={bd} size={160}/><div style={{marginTop:10}}>{bd.map((d)=><div key={d.label} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",fontSize:10,borderBottom:"1px solid #2d3748"}}><span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:2,background:d.color}}/> {d.label}</span><span style={{fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(d.value)}</span></div>)}</div></>);})()}
+            </Card>
+          </div>
+        </div>)}
+
+        {/* RETIREMENT VIEW */}
+        {topNav==="wealth" && wealthView==="retirement" && !selRetId && (<div style={{animation:"fu .35s ease"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
+            <div><h2 style={{margin:0,fontSize:20,fontWeight:700}}>Retirement Accounts</h2><p style={{margin:"3px 0 0",fontSize:12,color:"#6b7280"}}>{retirement.length} accounts &middot; {fmt(retirementValue)} total balance</p></div>
+            <button onClick={()=>setShowAddRetirement(true)} style={{...bp,background:"linear-gradient(135deg,#8b5cf6,#6366f1)"}}><I.Plus/> Add Account</button>
+          </div>
+          <div className="g3">
+            {retirement.map((r,i)=>{const gainPct=r.contributions>0?(((r.balance-r.contributions)/r.contributions)*100).toFixed(1):0;const ytdPct=r.ytdLimit>0?((r.ytdContribution/r.ytdLimit)*100).toFixed(0):0;return(
+              <Card key={r.id} style={{cursor:"pointer",transition:"all .2s",animation:"fu .3s ease "+(i*.06)+"s both"}} onClick={()=>setSelRetId(r.id)} onMouseEnter={(e)=>{e.currentTarget.style.borderColor="#8b5cf6";e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={(e)=>{e.currentTarget.style.borderColor="#2d3748";e.currentTarget.style.transform="none";}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><div style={{width:36,height:36,borderRadius:8,background:ACCT_COLORS[r.type]+"20",display:"flex",alignItems:"center",justifyContent:"center",color:ACCT_COLORS[r.type]}}><I.Shield/></div><div><div style={{fontSize:14,fontWeight:600}}>{r.name}</div><div style={{fontSize:10,color:"#6b7280"}}>{r.provider}</div></div></div>
+                <div style={{fontSize:26,fontWeight:700,color:"#e5e7eb",marginBottom:4}}>{fmt(r.balance)}</div>
+                <div style={{fontSize:11,color:parseFloat(gainPct)>=0?"#10b981":"#ef4444",marginBottom:12}}>+{fmt(r.balance-r.contributions)} ({gainPct}%) total return</div>
+                <div style={{marginBottom:8}}><div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}><span style={{color:"#6b7280"}}>YTD Contributions</span><span style={{fontFamily:"'JetBrains Mono',monospace"}}>{fmt(r.ytdContribution)} / {fmt(r.ytdLimit)}</span></div><div style={{height:6,background:"#2d3748",borderRadius:3,overflow:"hidden"}}><div style={{width:ytdPct+"%",height:"100%",background:ACCT_COLORS[r.type],borderRadius:3,transition:"width .3s"}}/></div></div>
+                <Spark data={r.history} keys={["value"]} colors={[ACCT_COLORS[r.type]]} height={60}/>
+              </Card>);})}
+          </div>
+        </div>)}
+
+        {/* RETIREMENT DETAIL VIEW */}
+        {topNav==="wealth" && wealthView==="retirement" && selRet && (<div style={{animation:"fu .35s ease"}}>
+          <div style={{marginBottom:18}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:3}}><Pill c={ACCT_COLORS[selRet.type]} ch={selRet.type.replace("_"," ").toUpperCase()}/><span style={{fontSize:11,color:"#6b7280"}}>{selRet.provider}</span></div><h2 style={{margin:0,fontSize:22,fontWeight:700}}>{selRet.name}</h2></div>
+          <div className="g4" style={{marginBottom:20}}>
+            {[{l:"BALANCE",v:fmt(selRet.balance),c:ACCT_COLORS[selRet.type]},{l:"CONTRIBUTIONS",v:fmt(selRet.contributions),c:"#6b7280"},{l:"GROWTH",v:"+"+fmt(selRet.balance-selRet.contributions),c:"#10b981"},{l:"EMPLOYER MATCH",v:fmt(selRet.employerMatch),c:"#3b82f6"}].map((c,i)=>(<Card key={i}><div style={{fontSize:8,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace",marginBottom:5}}>{c.l}</div><div style={{fontSize:20,fontWeight:700,color:c.c}}>{c.v}</div></Card>))}
+          </div>
+          <div className="g2" style={{marginBottom:20}}>
+            <Card><h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:600}}>Balance History</h3><Spark data={selRet.history} keys={["value"]} colors={[ACCT_COLORS[selRet.type]]} height={160}/></Card>
+            <Card><h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:600}}>Asset Allocation</h3><Donut data={selRet.allocation.map((a)=>({label:a.label,value:a.pct,color:a.color}))} size={160}/><div style={{marginTop:10}}>{selRet.allocation.map((a)=><div key={a.label} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",fontSize:11,borderBottom:"1px solid #2d3748"}}><span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:2,background:a.color}}/>{a.label}</span><span style={{fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{a.pct}%</span></div>)}</div></Card>
+          </div>
+          <Card><h3 style={{margin:"0 0 10px",fontSize:14,fontWeight:600}}>YTD Contribution Progress</h3>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6}}><span style={{color:"#9ca3af"}}>Contributed: {fmt(selRet.ytdContribution)}</span><span style={{color:"#9ca3af"}}>Limit: {fmt(selRet.ytdLimit)}</span></div>
+            <div style={{height:12,background:"#2d3748",borderRadius:6,overflow:"hidden",marginBottom:6}}><div style={{width:((selRet.ytdContribution/selRet.ytdLimit)*100)+"%",height:"100%",background:"linear-gradient(90deg,"+ACCT_COLORS[selRet.type]+","+ACCT_COLORS[selRet.type]+"80)",borderRadius:6,transition:"width .4s"}}/></div>
+            <div style={{fontSize:11,color:"#6b7280"}}>{fmt(selRet.ytdLimit-selRet.ytdContribution)} remaining for 2026</div>
+          </Card>
+        </div>)}
+
+        {/* OTHER ASSETS VIEW */}
+        {topNav==="wealth" && wealthView==="other" && (<div style={{animation:"fu .35s ease"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
+            <div><h2 style={{margin:0,fontSize:20,fontWeight:700}}>Other Investments &amp; Savings</h2><p style={{margin:"3px 0 0",fontSize:12,color:"#6b7280"}}>{otherAssets.length} accounts &middot; {fmt(otherAssetsValue)} total</p></div>
+            <button onClick={()=>setShowAddOther(true)} style={{...bp,background:"linear-gradient(135deg,#f59e0b,#d97706)"}}><I.Plus/> Add Account</button>
+          </div>
+          <div className="g3">
+            {otherAssets.map((a,i)=>{const gain=a.costBasis?a.balance-a.costBasis:null;return(
+              <Card key={a.id} style={{animation:"fu .3s ease "+(i*.06)+"s both"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><div style={{width:36,height:36,borderRadius:8,background:a.color+"20",display:"flex",alignItems:"center",justifyContent:"center",color:a.color}}>{a.type==="crypto"?<I.Stock/>:a.type==="savings"?<I.Bank/>:<I.Shield/>}</div><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600}}>{a.name}</div><div style={{fontSize:10,color:"#6b7280"}}>{a.institution}</div></div><Pill c={a.color} ch={a.type.toUpperCase()}/></div>
+                <div style={{fontSize:24,fontWeight:700,color:"#e5e7eb",marginBottom:4}}>{fmt(a.balance)}</div>
+                {a.apy&&<div style={{fontSize:11,color:"#10b981"}}>APY: {a.apy}%</div>}
+                {gain!==null&&<div style={{fontSize:11,color:gain>=0?"#10b981":"#ef4444"}}>{gain>=0?"+":""}{fmt(gain)} ({a.costBasis>0?((gain/a.costBasis)*100).toFixed(1):0}%)</div>}
+                {a.units&&<div style={{fontSize:10,color:"#6b7280",marginTop:2}}>{a.units} units &middot; {fmt(a.balance/a.units)}/unit</div>}
+                {a.maturityDate&&<div style={{fontSize:10,color:"#6b7280",marginTop:2}}>Matures: {a.maturityDate}</div>}
+              </Card>);})}
+          </div>
+        </div>)}
+
       </main>
 
       {/* MODALS */}
@@ -531,6 +837,47 @@ export default function App() {
           <Inp label="List Price ($)" name="lp" type="number" placeholder="500000" required/>
           <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,color:"#9ca3af",marginBottom:3,fontWeight:500}}>Notes</label><textarea name="notes" rows={3} placeholder="Why are you interested? Any observations..." style={{width:"100%",padding:"8px 10px",background:"#111827",border:"1px solid #374151",borderRadius:7,color:"#e5e7eb",fontSize:12,outline:"none",resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
           <button type="submit" style={{...bp,width:"100%",justifyContent:"center",background:"linear-gradient(135deg,#6366f1,#8b5cf6)"}}>Add to Watchlist</button>
+        </form>
+      </Modal>
+
+      {/* WEALTH MODALS */}
+      <Modal open={showAddStock} onClose={()=>setShowAddStock(false)} title="Add Stock Position">
+        <form onSubmit={(e)=>{e.preventDefault();const fd=new FormData(e.target);setStocks((prev)=>[...prev,{id:Date.now(),ticker:fd.get("ticker").toUpperCase(),name:fd.get("name"),shares:parseFloat(fd.get("shares")),costBasis:parseFloat(fd.get("cost")),currentPrice:parseFloat(fd.get("price")),sector:fd.get("sector"),brokerage:fd.get("brokerage")}]);setShowAddStock(false);}}>
+          <div className="gf2"><Inp label="Ticker" name="ticker" placeholder="AAPL" required/><Inp label="Company Name" name="name" placeholder="Apple Inc." required/></div>
+          <div className="gf3"><Inp label="Shares" name="shares" type="number" step="0.01" placeholder="10" required/><Inp label="Cost Basis ($)" name="cost" type="number" step="0.01" placeholder="150.00" required/><Inp label="Current Price ($)" name="price" type="number" step="0.01" placeholder="198.00" required/></div>
+          <div className="gf2"><Sel label="Sector" name="sector" options={[{value:"Technology",label:"Technology"},{value:"Consumer",label:"Consumer"},{value:"Healthcare",label:"Healthcare"},{value:"Finance",label:"Finance"},{value:"Energy",label:"Energy"},{value:"Index Fund",label:"Index Fund / ETF"},{value:"Other",label:"Other"}]}/><Sel label="Brokerage" name="brokerage" options={[{value:"Schwab",label:"Schwab"},{value:"Fidelity",label:"Fidelity"},{value:"Vanguard",label:"Vanguard"},{value:"Robinhood",label:"Robinhood"},{value:"TD Ameritrade",label:"TD Ameritrade"},{value:"Other",label:"Other"}]}/></div>
+          <button type="submit" style={{...bp,width:"100%",justifyContent:"center",background:"linear-gradient(135deg,#10b981,#059669)"}}>Add Position</button>
+        </form>
+      </Modal>
+
+      <Modal open={showAddRetirement} onClose={()=>setShowAddRetirement(false)} title="Add Retirement Account">
+        <form onSubmit={(e)=>{e.preventDefault();const fd=new FormData(e.target);setRetirement((prev)=>[...prev,{id:Date.now(),name:fd.get("name"),type:fd.get("type"),provider:fd.get("provider"),balance:parseFloat(fd.get("balance")),contributions:parseFloat(fd.get("contributions")||0),employerMatch:parseFloat(fd.get("match")||0),ytdContribution:parseFloat(fd.get("ytd")||0),ytdLimit:fd.get("type")==="401k"?23500:7000,allocation:[{label:"Mixed",pct:100,color:ACCT_COLORS[fd.get("type")]||"#3b82f6"}],history:[{month:"Feb",value:parseFloat(fd.get("balance"))}]}]);setShowAddRetirement(false);}}>
+          <Inp label="Account Name" name="name" placeholder="e.g., 401(k) - Employer" required/>
+          <div className="gf2"><Sel label="Account Type" name="type" options={[{value:"401k",label:"401(k)"},{value:"roth_ira",label:"Roth IRA"},{value:"trad_ira",label:"Traditional IRA"},{value:"403b",label:"403(b)"},{value:"sep_ira",label:"SEP IRA"}]}/><Inp label="Provider" name="provider" placeholder="Fidelity" required/></div>
+          <div className="gf2"><Inp label="Current Balance ($)" name="balance" type="number" step="0.01" placeholder="50000" required/><Inp label="Total Contributions ($)" name="contributions" type="number" step="0.01" placeholder="40000"/></div>
+          <div className="gf2"><Inp label="Employer Match ($)" name="match" type="number" step="0.01" placeholder="0"/><Inp label="YTD Contributions ($)" name="ytd" type="number" step="0.01" placeholder="0"/></div>
+          <button type="submit" style={{...bp,width:"100%",justifyContent:"center",background:"linear-gradient(135deg,#8b5cf6,#6366f1)"}}>Add Account</button>
+        </form>
+      </Modal>
+
+      <Modal open={showAddOther} onClose={()=>setShowAddOther(false)} title="Add Investment / Savings">
+        <form onSubmit={(e)=>{e.preventDefault();const fd=new FormData(e.target);const tp=fd.get("type");const colors={savings:"#10b981",crypto:"#f97316",cd:"#f59e0b",bonds:"#8b5cf6"};setOtherAssets((prev)=>[...prev,{id:Date.now(),name:fd.get("name"),type:tp,institution:fd.get("institution"),balance:parseFloat(fd.get("balance")),apy:fd.get("apy")?parseFloat(fd.get("apy")):null,costBasis:fd.get("cost")?parseFloat(fd.get("cost")):null,units:fd.get("units")?parseFloat(fd.get("units")):null,maturityDate:fd.get("maturity")||null,color:colors[tp]||"#6b7280"}]);setShowAddOther(false);}}>
+          <Inp label="Account Name" name="name" placeholder="e.g., High-Yield Savings" required/>
+          <div className="gf2"><Sel label="Type" name="type" options={[{value:"savings",label:"Savings Account"},{value:"crypto",label:"Cryptocurrency"},{value:"cd",label:"CD"},{value:"bonds",label:"Bonds"}]}/><Inp label="Institution" name="institution" placeholder="Goldman Sachs" required/></div>
+          <div className="gf2"><Inp label="Current Value ($)" name="balance" type="number" step="0.01" placeholder="10000" required/><Inp label="APY (%)" name="apy" type="number" step="0.01" placeholder="4.5"/></div>
+          <div className="gf2"><Inp label="Cost Basis ($)" name="cost" type="number" step="0.01" placeholder="Optional"/><Inp label="Units / Coins" name="units" type="number" step="0.0001" placeholder="Optional"/></div>
+          <Inp label="Maturity Date" name="maturity" type="date"/>
+          <button type="submit" style={{...bp,width:"100%",justifyContent:"center",background:"linear-gradient(135deg,#f59e0b,#d97706)"}}>Add Account</button>
+        </form>
+      </Modal>
+
+      <Modal open={showAddLiability} onClose={()=>setShowAddLiability(false)} title="Add Liability">
+        <form onSubmit={(e)=>{e.preventDefault();const fd=new FormData(e.target);setLiabilities((prev)=>[...prev,{id:Date.now(),name:fd.get("name"),type:fd.get("type"),balance:parseFloat(fd.get("balance")),rate:parseFloat(fd.get("rate")),monthlyPayment:parseFloat(fd.get("monthly")),originalBalance:parseFloat(fd.get("original")||fd.get("balance"))}]);setShowAddLiability(false);}}>
+          <Inp label="Name" name="name" placeholder="e.g., Home Mortgage" required/>
+          <div className="gf2"><Sel label="Type" name="type" options={[{value:"mortgage",label:"Mortgage"},{value:"auto",label:"Auto Loan"},{value:"student",label:"Student Loan"},{value:"credit",label:"Credit Card"}]}/><Inp label="Current Balance ($)" name="balance" type="number" step="0.01" placeholder="250000" required/></div>
+          <div className="gf2"><Inp label="Interest Rate (%)" name="rate" type="number" step="0.01" placeholder="5.25" required/><Inp label="Monthly Payment ($)" name="monthly" type="number" step="0.01" placeholder="1500" required/></div>
+          <Inp label="Original Balance ($)" name="original" type="number" step="0.01" placeholder="300000"/>
+          <button type="submit" style={{...bp,width:"100%",justifyContent:"center",background:"linear-gradient(135deg,#ef4444,#dc2626)"}}>Add Liability</button>
         </form>
       </Modal>
     </div>
