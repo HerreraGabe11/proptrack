@@ -200,13 +200,16 @@ const ACCT_COLORS = { "401k": "#3b82f6", roth_ira: "#8b5cf6", trad_ira: "#06b6d4
 const LIAB_COLORS = { mortgage: "#ef4444", auto: "#f59e0b", student: "#6366f1", credit: "#ec4899" };
 
 function Spark({ data, keys, colors, height = 120 }) {
-  if (!data?.length) return null;
-  const all = data.flatMap((d) => keys.map((k) => d[k]));
-  const mn = Math.min(...all)*.995, mx = Math.max(...all)*1.005;
+  if (!data?.length || data.length < 2) return null;
+  const all = data.flatMap((d) => keys.map((k) => d[k])).filter((v) => v != null && !isNaN(v));
+  if (!all.length) return null;
+  const rawMn = Math.min(...all), rawMx = Math.max(...all);
+  const pad = rawMx === rawMn ? rawMx * 0.05 : (rawMx - rawMn) * 0.15;
+  const mn = rawMn - pad, mx = rawMx + pad;
   const w=100,h=height;
-  const gy=(v)=>h-((v-mn)/(mx-mn))*(h-20)-10;
-  const gx=(i)=>(i/(data.length-1))*(w-10)+5;
-  return (<svg viewBox={"0 0 "+w+" "+h} style={{width:"100%",height}} preserveAspectRatio="none">{keys.map((key,ki)=>{const pts=data.map((d,i)=>gx(i)+","+gy(d[key])).join(" ");return(<g key={key}><polyline points={pts} fill="none" stroke={colors[ki]} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>{data.map((d,i)=><circle key={i} cx={gx(i)} cy={gy(d[key])} r="1.8" fill={colors[ki]}/>)}</g>);})}{data.map((d,i)=><text key={i} x={gx(i)} y={h-1} textAnchor="middle" fontSize="4" fill="#8896ab">{d.month}</text>)}</svg>);
+  const gy=(v)=>h-((v-mn)/(mx-mn))*(h-24)-12;
+  const gx=(i)=>(i/(data.length-1))*(w-14)+7;
+  return (<svg viewBox={"0 0 "+w+" "+h} style={{width:"100%",height}} preserveAspectRatio="xMidYMid meet">{keys.map((key,ki)=>{const pts=data.map((d,i)=>gx(i)+","+gy(d[key]||0)).join(" ");return(<g key={key}><polyline points={pts} fill="none" stroke={colors[ki]} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>{data.map((d,i)=><circle key={i} cx={gx(i)} cy={gy(d[key]||0)} r="1.5" fill={colors[ki]}/>)}</g>);})}{data.map((d,i)=><text key={i} x={gx(i)} y={h-1} textAnchor="middle" fontSize="4" fill="#8896ab">{d.month}</text>)}</svg>);
 }
 function Bars({data,vk,lk,color,height=130}){const mx=Math.max(...data.map((d)=>d[vk]));return(<div style={{display:"flex",alignItems:"flex-end",gap:5,height,padding:"0 2px"}}>{data.map((d,i)=>{const bh=(d[vk]/mx)*(height-22);return(<div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}><div style={{fontSize:8,color:"#8896ab",fontFamily:"'JetBrains Mono',monospace"}}>{(d[vk]/1000).toFixed(0)}k</div><div style={{width:"100%",height:bh,background:color+"30",borderRadius:"3px 3px 0 0",border:"1px solid "+color+"50",position:"relative",overflow:"hidden"}}><div style={{position:"absolute",bottom:0,left:0,right:0,height:"40%",background:"linear-gradient(to top,"+color+"60,transparent)"}}/></div><div style={{fontSize:8,color:"#8896ab",whiteSpace:"nowrap"}}>{d[lk]}</div></div>);})}</div>);}
 function Donut({data,size=126}){const tot=data.reduce((s,d)=>s+d.value,0);const r=size/2-10,cx=size/2,cy=size/2;let cum=-90;return(<svg width={size} height={size}>{data.map((d,i)=>{const a=(d.value/tot)*360,s=cum;cum+=a;const sr=(s*Math.PI)/180,er=((s+a)*Math.PI)/180;return <path key={i} d={"M"+cx+","+cy+" L"+(cx+r*Math.cos(sr))+","+(cy+r*Math.sin(sr))+" A"+r+","+r+" 0 "+(a>180?1:0)+" 1 "+(cx+r*Math.cos(er))+","+(cy+r*Math.sin(er))+" Z"} fill={d.color} opacity="0.85"/>;})}<circle cx={cx} cy={cy} r={r*0.55} fill="#111827"/><text x={cx} y={cy-3} textAnchor="middle" fill="#e5e7eb" fontSize="12" fontWeight="700">{fmt(tot)}</text><text x={cx} y={cy+10} textAnchor="middle" fill="#6b7280" fontSize="7">total</text></svg>);}
@@ -275,6 +278,13 @@ export default function App() {
   const [selRetId, setSelRetId] = useState(null);
   const [fetchingData, setFetchingData] = useState(false);
   const [fetchStatus, setFetchStatus] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+
+  const handleDeleteProperty = (id) => {
+    setProperties((prev) => prev.filter((p) => p.id !== id));
+    setShowDeleteConfirm(null);
+    setView("state");
+  };
 
   // Fetch real property data from RentCast API
   const handleFetchProperty = async (formRef) => {
@@ -691,7 +701,9 @@ export default function App() {
           const psm=STATE_MARKET_DATA[p.state];
           const tabs=[{id:"overview",l:"Overview",Ic:I.Home},{id:"valuation",l:"Valuation",Ic:I.Chart},{id:"maintenance",l:"Maintenance",Ic:I.Wrench},{id:"expenses",l:"Expenses",Ic:I.Receipt}];
           return(<div style={{animation:"fu .35s ease"}}>
-            <div style={{marginBottom:18}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:3}}><Pill c={psm?.color} ch={p.state}/><span style={{fontSize:11,color:"#6b7280"}}>{p.city}</span></div><h2 style={{margin:0,fontSize:22,fontWeight:700}}>{p.name}</h2><p style={{margin:"3px 0 0",fontSize:12,color:"#6b7280"}}>{p.address}</p><div style={{display:"flex",gap:8,marginTop:8}}>{[p.type,p.bedrooms+"bd/"+p.bathrooms+"ba",p.sqft.toLocaleString()+" sqft","Built "+p.yearBuilt].map((t)=><span key={t} style={{fontSize:10,color:"#9ca3af",background:"#111827",padding:"3px 8px",borderRadius:5,border:"1px solid #2d3748"}}>{t}</span>)}</div></div>
+            <div style={{marginBottom:18,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:3}}><Pill c={psm?.color} ch={p.state}/><span style={{fontSize:11,color:"#6b7280"}}>{p.city}</span></div><h2 style={{margin:0,fontSize:22,fontWeight:700}}>{p.name}</h2><p style={{margin:"3px 0 0",fontSize:12,color:"#6b7280"}}>{p.address}</p><div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>{[p.type,p.bedrooms+"bd/"+p.bathrooms+"ba",p.sqft.toLocaleString()+" sqft","Built "+p.yearBuilt].map((t)=><span key={t} style={{fontSize:10,color:"#9ca3af",background:"#111827",padding:"3px 8px",borderRadius:5,border:"1px solid #2d3748"}}>{t}</span>)}</div></div>
+              <button onClick={()=>setShowDeleteConfirm(p.id)} style={{background:"#ef444418",border:"1px solid #ef444430",borderRadius:8,padding:"6px 12px",cursor:"pointer",color:"#ef4444",fontSize:11,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg> Delete</button>
+            </div>
             <div className="prop-tabs">{tabs.map((t)=><button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:4,padding:"8px 14px",borderRadius:9,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,background:tab===t.id?"linear-gradient(135deg,#3b82f6,#2563eb)":"transparent",color:tab===t.id?"#fff":"#6b7280",transition:"all .2s"}}><t.Ic/> {t.l}</button>)}</div>
             {tab==="overview"&&(<div><div style={{marginBottom:20}} className="g4">{[{l:"MARKET VALUE",v:fmt(v),c:"#3b82f6"},{l:"EQUITY",v:"+"+fmt(eq),c:"#10b981"},{l:"MONTHLY EXP",v:fmt(mExp),c:"#f59e0b"},{l:"OPEN MAINT",v:p.maintenance.filter((m)=>m.status!=="completed").length,c:"#ef4444"}].map((c,i)=>(<Card key={i}><div style={{fontSize:8,color:"#6b7280",fontFamily:"'JetBrains Mono',monospace",marginBottom:5}}>{c.l}</div><div style={{fontSize:20,fontWeight:700,color:c.c}}>{c.v}</div></Card>))}</div><div style={{gap:12}} className="g2e"><Card><h3 style={{margin:"0 0 10px",fontSize:13,fontWeight:600}}>Value Trend</h3><div style={{display:"flex",gap:12,marginBottom:8}}>{[{l:"Zillow",c:"#3b82f6"},{l:"Redfin",c:"#ef4444"},{l:"Realtor",c:"#10b981"}].map((s)=><span key={s.l} style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:"#9ca3af"}}><span style={{width:8,height:3,borderRadius:2,background:s.c}}/> {s.l}</span>)}</div><Spark data={p.marketHistory} keys={["zillow","redfin","realtor"]} colors={["#3b82f6","#ef4444","#10b981"]} height={150}/></Card><Card><h3 style={{margin:"0 0 10px",fontSize:13,fontWeight:600}}>Expenses</h3><div style={{display:"flex",justifyContent:"center"}}><Donut data={dd}/></div><div style={{marginTop:8}}>{dd.map((d)=><div key={d.label} style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:10}}><span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:2,background:d.color}}/><span style={{color:"#9ca3af"}}>{d.label}</span></span><span style={{fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(d.value)}</span></div>)}</div></Card></div></div>)}
             {tab==="valuation"&&(<div><div style={{marginBottom:20}} className="g3">{[{src:"Zillow",d:p.valuations.zillow,c:"#3b82f6",lg:"Z"},{src:"Redfin",d:p.valuations.redfin,c:"#ef4444",lg:"R"},{src:"Realtor.com",d:p.valuations.realtor,c:"#10b981",lg:"R"}].map((x,i)=>(<Card key={x.src} style={{animation:"fu .3s ease "+(i*.07)+"s both"}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><div style={{width:32,height:32,borderRadius:7,background:x.c+"20",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,color:x.c,fontFamily:"'JetBrains Mono',monospace",fontSize:14}}>{x.lg}</div><div><div style={{fontSize:13,fontWeight:600}}>{x.src}</div><div style={{fontSize:9,color:"#6b7280"}}>{x.d.lastUpdated}</div></div><Pill c="#10b981" ch={"+"+x.d.change+"%"}/></div><div style={{fontSize:24,fontWeight:700,color:x.c}}>{fmt(x.d.value)}</div><div style={{fontSize:11,color:"#6b7280",marginTop:2}}>+{fmt(x.d.value-p.purchasePrice)} since purchase</div></Card>))}</div><Card><h3 style={{margin:"0 0 10px",fontSize:14,fontWeight:600}}>6-Month History</h3><Spark data={p.marketHistory} keys={["zillow","redfin","realtor"]} colors={["#3b82f6","#ef4444","#10b981"]} height={190}/></Card></div>)}
@@ -940,6 +952,21 @@ export default function App() {
           <Inp label="Original Balance ($)" name="original" type="number" step="0.01" placeholder="300000"/>
           <button type="submit" style={{...bp,width:"100%",justifyContent:"center",background:"linear-gradient(135deg,#ef4444,#dc2626)"}}>Add Liability</button>
         </form>
+      </Modal>
+
+      {/* DELETE CONFIRMATION MODAL */}
+      <Modal open={showDeleteConfirm!==null} onClose={()=>setShowDeleteConfirm(null)} title="Delete Property">
+        <div style={{textAlign:"center",padding:"10px 0"}}>
+          <div style={{width:56,height:56,borderRadius:14,background:"#ef444418",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",color:"#ef4444"}}>
+            <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>
+          </div>
+          <h3 style={{margin:"0 0 8px",fontSize:18,fontWeight:700,color:"#e5e7eb"}}>Are you sure?</h3>
+          <p style={{margin:"0 0 24px",fontSize:13,color:"#9ca3af",lineHeight:1.5}}>This will permanently delete <strong style={{color:"#e5e7eb"}}>{properties.find((p)=>p.id===showDeleteConfirm)?.name||"this property"}</strong> and all its data. This cannot be undone.</p>
+          <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+            <button onClick={()=>setShowDeleteConfirm(null)} style={{padding:"10px 24px",background:"#1f2937",border:"1px solid #374151",borderRadius:9,color:"#9ca3af",fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+            <button onClick={()=>handleDeleteProperty(showDeleteConfirm)} style={{padding:"10px 24px",background:"linear-gradient(135deg,#ef4444,#dc2626)",border:"none",borderRadius:9,color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Delete Property</button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
