@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "./firebase/AuthContext";
 import { loadUserData, saveUserData } from "./firebase/firestore";
+import { fetchFullPropertyAnalysis } from "./firebase/api";
 
 const STATE_MARKET_DATA = {
   Colorado: {
@@ -272,6 +273,48 @@ export default function App() {
   const [showAddOther, setShowAddOther] = useState(false);
   const [showAddLiability, setShowAddLiability] = useState(false);
   const [selRetId, setSelRetId] = useState(null);
+  const [fetchingData, setFetchingData] = useState(false);
+  const [fetchStatus, setFetchStatus] = useState("");
+
+  // Fetch real property data from RentCast API
+  const handleFetchProperty = async (formRef) => {
+    const fd = new FormData(formRef);
+    const addr = fd.get("addr");
+    const city = fd.get("city");
+    const st = fd.get("state") === "Colorado" ? "CO" : fd.get("state") === "Utah" ? "UT" : fd.get("state");
+    const zip = fd.get("zip");
+    if (!addr || !city || !zip) { setFetchStatus("Enter address, city, and zip code first"); return; }
+    setFetchingData(true);
+    setFetchStatus("Fetching real market data...");
+    try {
+      const data = await fetchFullPropertyAnalysis(addr, city, st, zip, fd.get("bd") || undefined);
+      // Auto-fill form fields from property record
+      if (data.property) {
+        const p = data.property;
+        if (p.bedrooms) formRef.querySelector('[name="bd"]').value = p.bedrooms;
+        if (p.bathrooms) formRef.querySelector('[name="ba"]').value = p.bathrooms;
+        if (p.squareFootage) formRef.querySelector('[name="sqft"]').value = p.squareFootage;
+        if (p.yearBuilt) formRef.querySelector('[name="yr"]').value = p.yearBuilt;
+        if (p.propertyType) {
+          const sel = formRef.querySelector('[name="type"]');
+          const typeMap = { "Single Family": "Single Family", "Condo": "Condo", "Townhouse": "Townhouse", "Multi-Family": "Multi-Family" };
+          if (typeMap[p.propertyType]) sel.value = typeMap[p.propertyType];
+        }
+      }
+      // Store fetched data for use on submit
+      formRef._apiData = data;
+      const valEst = data.valuation?.price || data.valuation?.priceRangeLow || null;
+      const rentEst = data.rent?.rent || null;
+      let msg = "Data loaded!";
+      if (valEst) msg += " Est. value: " + fmt(valEst);
+      if (rentEst) msg += " | Rent: " + fmt(rentEst) + "/mo";
+      if (data.errors?.length) msg += " (" + data.errors.length + " partial errors)";
+      setFetchStatus(msg);
+    } catch (e) {
+      setFetchStatus("Error: " + e.message);
+    }
+    setFetchingData(false);
+  };
 
   // ═══════════════ LOAD DATA FROM FIRESTORE ═══════════════
   useEffect(() => {
@@ -815,11 +858,26 @@ export default function App() {
         </form>
       </Modal>
 
-      <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="Add Property">
-        <form onSubmit={(e)=>{e.preventDefault();const fd=new FormData(e.target);const pp=parseFloat(fd.get("pp"));setProperties((prev)=>[...prev,{id:Date.now(),name:fd.get("name"),state:fd.get("state"),city:fd.get("city"),address:fd.get("addr"),type:fd.get("type"),bedrooms:parseInt(fd.get("bd")),bathrooms:parseFloat(fd.get("ba")),sqft:parseInt(fd.get("sqft")),yearBuilt:parseInt(fd.get("yr")),purchasePrice:pp,purchaseDate:fd.get("pd"),valuations:{zillow:{value:pp,change:0,lastUpdated:"2026-02-09"},redfin:{value:pp,change:0,lastUpdated:"2026-02-09"},realtor:{value:pp,change:0,lastUpdated:"2026-02-09"}},marketHistory:[{month:"Feb",zillow:pp,redfin:pp,realtor:pp}],expenses:[],maintenance:[]}]);setShowAdd(false);}}>
+      <Modal open={showAdd} onClose={()=>{setShowAdd(false);setFetchStatus("");}} title="Add Property">
+        <form ref={(el)=>{if(el)el._formRef=el;}} onSubmit={(e)=>{e.preventDefault();const fd=new FormData(e.target);const pp=parseFloat(fd.get("pp"));const apiData=e.target._apiData||null;const valEst=apiData?.valuation?.price||pp;const rentEst=apiData?.rent?.rent||null;const comps=apiData?.valuation?.comparables||[];const mkt=apiData?.market||null;const today=new Date().toISOString().split("T")[0];const mo=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][new Date().getMonth()];
+          setProperties((prev)=>[...prev,{id:Date.now(),name:fd.get("name"),state:fd.get("state"),city:fd.get("city"),address:fd.get("addr")+(fd.get("zip")?" "+fd.get("zip"):""),type:fd.get("type"),bedrooms:parseInt(fd.get("bd")),bathrooms:parseFloat(fd.get("ba")),sqft:parseInt(fd.get("sqft")),yearBuilt:parseInt(fd.get("yr")),purchasePrice:pp,purchaseDate:fd.get("pd"),
+            valuations:{
+              zillow:{value:valEst,change:0,lastUpdated:today},
+              redfin:{value:apiData?.valuation?.priceRangeLow||valEst,change:0,lastUpdated:today},
+              realtor:{value:apiData?.valuation?.priceRangeHigh||valEst,change:0,lastUpdated:today}
+            },
+            rentEstimate:rentEst,
+            apiValuation:apiData?.valuation||null,
+            apiMarket:mkt,
+            apiComparables:comps,
+            marketHistory:[{month:mo,zillow:valEst,redfin:apiData?.valuation?.priceRangeLow||valEst,realtor:apiData?.valuation?.priceRangeHigh||valEst}],
+            expenses:[],maintenance:[]}]);setShowAdd(false);setFetchStatus("");}}>
           <Inp label="Property Name" name="name" placeholder="e.g., Mountain View Home" required/>
-          <div className="gf2"><Sel label="State" name="state" options={[{value:"Colorado",label:"Colorado"},{value:"Utah",label:"Utah"}]}/><Inp label="City" name="city" placeholder="Denver" required/></div>
-          <Inp label="Address" name="addr" placeholder="Full address" required/>
+          <div className="gf2"><Sel label="State" name="state" options={[{value:"Colorado",label:"Colorado"},{value:"Utah",label:"Utah"},{value:"Arizona",label:"Arizona"},{value:"Texas",label:"Texas"},{value:"California",label:"California"},{value:"Florida",label:"Florida"}]}/><Inp label="City" name="city" placeholder="Denver" required/></div>
+          <div className="gf2"><Inp label="Street Address" name="addr" placeholder="742 Evergreen Terrace" required/><Inp label="Zip Code" name="zip" placeholder="80203" required/></div>
+          <div style={{marginBottom:12}}><button type="button" onClick={(e)=>handleFetchProperty(e.target.closest("form"))} disabled={fetchingData} style={{...bp,width:"100%",justifyContent:"center",background:fetchingData?"#374151":"linear-gradient(135deg,#8b5cf6,#6366f1)",opacity:fetchingData?.7:1,cursor:fetchingData?"wait":"pointer"}}>{fetchingData?"Fetching data...":"Fetch Real Market Data"}</button>
+            {fetchStatus&&<div style={{marginTop:6,fontSize:11,padding:"6px 10px",borderRadius:6,background:fetchStatus.startsWith("Error")?"#ef444418":"#10b98118",color:fetchStatus.startsWith("Error")?"#f87171":"#34d399",border:"1px solid "+(fetchStatus.startsWith("Error")?"#ef444430":"#10b98130")}}>{fetchStatus}</div>}
+          </div>
           <div className="gf2"><Sel label="Type" name="type" options={[{value:"Single Family",label:"Single Family"},{value:"Condo",label:"Condo"},{value:"Townhouse",label:"Townhouse"},{value:"Multi-Family",label:"Multi-Family"}]}/><Inp label="Year Built" name="yr" type="number" placeholder="2020" required/></div>
           <div className="gf3"><Inp label="Beds" name="bd" type="number" placeholder="3" required/><Inp label="Baths" name="ba" type="number" step="0.5" placeholder="2" required/><Inp label="Sq Ft" name="sqft" type="number" placeholder="2000" required/></div>
           <div className="gf2"><Inp label="Purchase Price ($)" name="pp" type="number" placeholder="350000" required/><Inp label="Purchase Date" name="pd" type="date" required/></div>
