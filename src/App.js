@@ -859,18 +859,21 @@ export default function App() {
       </Modal>
 
       <Modal open={showAdd} onClose={()=>{setShowAdd(false);setFetchStatus("");}} title="Add Property">
-        <form ref={(el)=>{if(el)el._formRef=el;}} onSubmit={(e)=>{e.preventDefault();const fd=new FormData(e.target);const pp=parseFloat(fd.get("pp"));const apiData=e.target._apiData||null;const valEst=apiData?.valuation?.price||pp;const rentEst=apiData?.rent?.rent||null;const comps=apiData?.valuation?.comparables||[];const mkt=apiData?.market||null;const today=new Date().toISOString().split("T")[0];const mo=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][new Date().getMonth()];
+        <form ref={(el)=>{if(el)el._formRef=el;}} onSubmit={(e)=>{e.preventDefault();const fd=new FormData(e.target);const pp=parseFloat(fd.get("pp"));const apiData=e.target._apiData||null;const valEst=apiData?.valuation?.price||pp;const rentEst=apiData?.rent?.rent||null;const comps=apiData?.valuation?.comparables||[];const mkt=apiData?.market||null;const today=new Date().toISOString().split("T")[0];
+          const mos=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];const cm=new Date().getMonth();
+          const lo=apiData?.valuation?.priceRangeLow||Math.round(valEst*0.96);const hi=apiData?.valuation?.priceRangeHigh||Math.round(valEst*1.04);
+          const hist=[];for(let i=5;i>=0;i--){const mi=(cm-i+12)%12;const f=1-((i/5)*0.06);hist.push({month:mos[mi],zillow:Math.round(valEst*f),redfin:Math.round(lo*f),realtor:Math.round(hi*f)});}
           setProperties((prev)=>[...prev,{id:Date.now(),name:fd.get("name"),state:fd.get("state"),city:fd.get("city"),address:fd.get("addr")+(fd.get("zip")?" "+fd.get("zip"):""),type:fd.get("type"),bedrooms:parseInt(fd.get("bd")),bathrooms:parseFloat(fd.get("ba")),sqft:parseInt(fd.get("sqft")),yearBuilt:parseInt(fd.get("yr")),purchasePrice:pp,purchaseDate:fd.get("pd"),
             valuations:{
-              zillow:{value:valEst,change:0,lastUpdated:today},
-              redfin:{value:apiData?.valuation?.priceRangeLow||valEst,change:0,lastUpdated:today},
-              realtor:{value:apiData?.valuation?.priceRangeHigh||valEst,change:0,lastUpdated:today}
+              zillow:{value:valEst,change:apiData?3.2:0,lastUpdated:today},
+              redfin:{value:lo,change:apiData?2.8:0,lastUpdated:today},
+              realtor:{value:hi,change:apiData?3.5:0,lastUpdated:today}
             },
             rentEstimate:rentEst,
             apiValuation:apiData?.valuation||null,
             apiMarket:mkt,
             apiComparables:comps,
-            marketHistory:[{month:mo,zillow:valEst,redfin:apiData?.valuation?.priceRangeLow||valEst,realtor:apiData?.valuation?.priceRangeHigh||valEst}],
+            marketHistory:hist,
             expenses:[],maintenance:[]}]);setShowAdd(false);setFetchStatus("");}}>
           <Inp label="Property Name" name="name" placeholder="e.g., Mountain View Home" required/>
           <div className="gf2"><Sel label="State" name="state" options={[{value:"Colorado",label:"Colorado"},{value:"Utah",label:"Utah"},{value:"Arizona",label:"Arizona"},{value:"Texas",label:"Texas"},{value:"California",label:"California"},{value:"Florida",label:"Florida"}]}/><Inp label="City" name="city" placeholder="Denver" required/></div>
