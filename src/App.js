@@ -204,10 +204,10 @@ function Spark({ data, keys, colors, height = 120 }) {
   const all = data.flatMap((d) => keys.map((k) => d[k])).filter((v) => v != null && !isNaN(v));
   if (!all.length) return null;
   const rawMn = Math.min(...all), rawMx = Math.max(...all);
-  const pad = rawMx === rawMn ? rawMx * 0.05 : (rawMx - rawMn) * 0.15;
+  const pad = rawMx === rawMn ? rawMx * 0.05 : (rawMx - rawMn) * 0.4;
   const mn = rawMn - pad, mx = rawMx + pad;
   const w=100,h=height;
-  const gy=(v)=>h-((v-mn)/(mx-mn))*(h-24)-12;
+  const gy=(v)=>h-((v-mn)/(mx-mn))*(h-30)-15;
   const gx=(i)=>(i/(data.length-1))*(w-14)+7;
   return (<svg viewBox={"0 0 "+w+" "+h} style={{width:"100%",height}} preserveAspectRatio="none">{keys.map((key,ki)=>{const pts=data.map((d,i)=>gx(i)+","+gy(d[key]||0)).join(" ");return(<g key={key}><polyline points={pts} fill="none" stroke={colors[ki]} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>{data.map((d,i)=><circle key={i} cx={gx(i)} cy={gy(d[key]||0)} r="1.5" fill={colors[ki]}/>)}</g>);})}{data.map((d,i)=><text key={i} x={gx(i)} y={h-1} textAnchor="middle" fontSize="4" fill="#8896ab">{d.month}</text>)}</svg>);
 }
